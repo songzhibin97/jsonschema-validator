@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/songzhibin97/jsonschema-validator/comparators"
 	"github.com/songzhibin97/jsonschema-validator/errors"
 )
 
@@ -107,32 +106,35 @@ func requiredValidator(ctx context.Context, value interface{}, schemaValue inter
 }
 
 // minimumValidator 验证最小值
-func minimumValidator(ctx context.Context, value interface{}, schemaValue interface{}, path string) (bool, error) {
-	schemaVal, ok := schemaValue.(float64)
-	if !ok {
-		return false, fmt.Errorf("minimum must be a number")
-	}
-
-	var val float64
-	switch n := value.(type) {
+func minimumValidator(ctx context.Context, value interface{}, schema interface{}, path string) (bool, error) {
+	var schemaNum float64
+	switch v := schema.(type) {
 	case int:
-		val = float64(n)
+		schemaNum = float64(v)
 	case float64:
-		val = n
+		schemaNum = v
 	default:
+		return false, &errors.ValidationError{
+			Path:    path,
+			Message: "minimum must be a number",
+			Tag:     "minimum",
+		}
+	}
+	valueNum, ok := toFloat64(value)
+	if !ok {
 		return false, &errors.ValidationError{
 			Path:    path,
 			Message: "value must be a number",
 			Tag:     "minimum",
+			Value:   value,
 		}
 	}
-
-	isValid := comparators.GetGeComparator()(val, schemaVal) // 直接使用 comparators 包
-	if !isValid {
+	if valueNum < schemaNum {
 		return false, &errors.ValidationError{
 			Path:    path,
-			Message: fmt.Sprintf("value %v is less than minimum %v", val, schemaVal),
+			Message: fmt.Sprintf("value %v is less than minimum %v", valueNum, schemaNum),
 			Tag:     "minimum",
+			Value:   value,
 		}
 	}
 	return true, nil

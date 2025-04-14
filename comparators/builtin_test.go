@@ -1,6 +1,7 @@
 package comparators
 
 import (
+	"math"
 	"sync"
 	"testing"
 
@@ -196,5 +197,70 @@ func TestConcurrentRegistration(t *testing.T) {
 	for _, comp := range []string{"eq", "ne", "gt", "ge", "lt", "le"} {
 		fn := registry.GetComparator(comp)
 		assert.NotNil(t, fn, "comparator %s should be registered", comp)
+	}
+}
+
+func TestEqual_ComplexTypes(t *testing.T) {
+	tests := []struct {
+		name        string
+		a           interface{}
+		b           interface{}
+		expectValid bool
+	}{
+		{
+			name:        "Equal slices",
+			a:           []int{1, 2, 3},
+			b:           []int{1, 2, 3},
+			expectValid: true,
+		},
+		{
+			name:        "Unequal slices",
+			a:           []int{1, 2},
+			b:           []int{1, 2, 3},
+			expectValid: false,
+		},
+		{
+			name:        "Equal maps",
+			a:           map[string]int{"a": 1},
+			b:           map[string]int{"a": 1},
+			expectValid: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := equal(tt.a, tt.b)
+			assert.Equal(t, tt.expectValid, result, "comparison result mismatch")
+		})
+	}
+}
+
+func TestNumericComparators_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		fn          CompareFunc
+		a           interface{}
+		b           interface{}
+		expectValid bool
+	}{
+		{
+			name:        "NaN comparison",
+			fn:          greaterThan,
+			a:           math.NaN(),
+			b:           5.0,
+			expectValid: false,
+		},
+		{
+			name:        "Infinity comparison",
+			fn:          lessThan,
+			a:           math.Inf(1),
+			b:           math.Inf(1),
+			expectValid: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.fn(tt.a, tt.b)
+			assert.Equal(t, tt.expectValid, result, "comparison result mismatch")
+		})
 	}
 }

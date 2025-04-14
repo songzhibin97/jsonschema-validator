@@ -56,6 +56,7 @@ func New(opts ...Option) *Validator {
 }
 
 // RegisterValidator 注册自定义验证器
+// validator.go
 func (v *Validator) RegisterValidator(name string, fn rules2.RuleFunc) error {
 	v.lock.Lock()
 	defer v.lock.Unlock()
@@ -64,6 +65,9 @@ func (v *Validator) RegisterValidator(name string, fn rules2.RuleFunc) error {
 	}
 	if fn == nil {
 		return errors.New("validator function cannot be nil")
+	}
+	if _, exists := v.validators[name]; exists {
+		return errors.New("validator " + name + " already registered")
 	}
 	v.validators[name] = fn
 	return nil
@@ -594,7 +598,7 @@ func (v *Validator) parseTag(tag string) map[string]interface{} {
 				} else if num, err := strconv.ParseFloat(value, 64); err == nil {
 					result[key] = num
 				} else {
-					result[key] = value // 保留原始值，留给验证器处理
+					result[key] = value // 保留原始值，交给验证器处理
 				}
 			case "type", "pattern", "format":
 				result[key] = value

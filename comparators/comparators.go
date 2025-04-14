@@ -35,6 +35,9 @@ func (c *BaseComparator) Name() string {
 
 // Compare 执行比较
 func (c *BaseComparator) Compare(a, b interface{}) bool {
+	if c.fn == nil {
+		return false
+	}
 	return c.fn(a, b)
 }
 
