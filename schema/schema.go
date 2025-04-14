@@ -3,6 +3,7 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 )
 
 // ValidationMode 定义验证模式
@@ -73,10 +74,8 @@ func (s *Schema) Compile() error {
 		switch v := typeVal.(type) {
 		case string:
 			compiled.Keywords["type"] = v
-			// 预处理类型信息
 			compiled.TypeRules["primary"] = []string{v}
 		case []interface{}:
-			// 预处理类型数组，避免重复类型断言
 			types := make([]string, 0, len(v))
 			for _, t := range v {
 				if ts, ok := t.(string); ok {
@@ -157,6 +156,11 @@ func (s *Schema) Compile() error {
 	if patternProps, ok := s.Raw["patternProperties"].(map[string]interface{}); ok {
 		patternSchemas := make(map[string]*CompiledSchema)
 		for pattern, propSchema := range patternProps {
+			_, err := regexp.Compile(pattern)
+			if err != nil {
+				return fmt.Errorf("invalid pattern in patternProperties: %s - %w", pattern, err)
+			}
+
 			ps, ok := propSchema.(map[string]interface{})
 			if !ok {
 				return fmt.Errorf("pattern property '%s' must be an object, got %T", pattern, propSchema)
@@ -267,6 +271,13 @@ func (s *Schema) Compile() error {
 			requiredFields = append(requiredFields, f)
 		}
 		compiled.Keywords["required"] = requiredFields
+	}
+
+	// 显式检查 $ref
+	for key := range s.Raw {
+		if key == "$ref" && s.Mode == ModeStrict {
+			return fmt.Errorf("unsupported keyword '$ref' in strict mode")
+		}
 	}
 
 	// 处理其他关键字
