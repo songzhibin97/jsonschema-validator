@@ -64,7 +64,6 @@ func validateAllOf(ctx context.Context, value interface{}, schemaValue interface
 
 		// 遍历schema中的验证关键字
 		for keyword, keywordValue := range schemaObj {
-			// 跳过非验证关键字
 			if keyword == "title" || keyword == "description" || keyword == "default" || keyword == "examples" {
 				continue
 			}
@@ -76,12 +75,11 @@ func validateAllOf(ctx context.Context, value interface{}, schemaValue interface
 
 			isValid, err := validator(ctx, value, keywordValue, schemaPath)
 			if err != nil {
-				// 包装子验证器的错误
 				return false, &errors.ValidationError{
 					Path:    schemaPath,
-					Message: fmt.Sprintf("failed to validate against schema at allOf[%d] for keyword '%s' err:%e", i, keyword, err),
+					Message: fmt.Sprintf("failed to validate against schema at allOf[%d] for keyword '%s': %v", i, keyword, err),
 					Value:   value,
-					Tag:     keyword,
+					Tag:     "allOf",
 				}
 			}
 
@@ -90,7 +88,7 @@ func validateAllOf(ctx context.Context, value interface{}, schemaValue interface
 					Path:    schemaPath,
 					Message: fmt.Sprintf("failed to validate against schema at allOf[%d] for keyword '%s'", i, keyword),
 					Value:   value,
-					Tag:     keyword,
+					Tag:     "allOf",
 				}
 			}
 		}
@@ -150,54 +148,16 @@ func validateAnyOf(ctx context.Context, value interface{}, schemaValue interface
 
 		schemaPath := fmt.Sprintf("%s.anyOf[%d]", path, i)
 
-		// 标记当前schema验证是否通过
-		isSchemaValid := true
-		var schemaError *errors.ValidationError
-
-		// 遍历schema中的验证关键字
-		for keyword, keywordValue := range schemaObj {
-			// 跳过非验证关键字
-			if keyword == "title" || keyword == "description" || keyword == "default" || keyword == "examples" {
-				continue
-			}
-
-			validator := registry.GetValidator(keyword)
-			if validator == nil {
-				continue
-			}
-
-			isValid, err := validator(ctx, value, keywordValue, schemaPath)
-			if err != nil {
-				validErr, ok := err.(*errors.ValidationError)
-				if ok {
-					schemaError = validErr
-					isSchemaValid = false
-					break
-				} else {
-					return false, err
-				}
-			}
-
-			if !isValid {
-				isSchemaValid = false
-				schemaError = &errors.ValidationError{
-					Path:    schemaPath,
-					Message: fmt.Sprintf("failed to validate against schema at anyOf[%d] for keyword '%s'", i, keyword),
-					Value:   value,
-					Tag:     keyword,
-				}
-				break
-			}
-		}
-
-		// 如果当前schema验证通过，则整体验证通过
-		if isSchemaValid {
+		// 使用通用的validateWithSchema函数
+		valid, validErr := validateWithSchema(ctx, value, schemaObj, schemaPath, registry)
+		if valid {
+			// 只要有一个schema验证通过，整体就通过
 			return true, nil
 		}
 
 		// 记录错误
-		if schemaError != nil {
-			validationErrors = append(validationErrors, *schemaError)
+		if validErr != nil {
+			validationErrors = append(validationErrors, *validErr)
 		}
 	}
 
@@ -264,48 +224,9 @@ func validateOneOf(ctx context.Context, value interface{}, schemaValue interface
 
 		schemaPath := fmt.Sprintf("%s.oneOf[%d]", path, i)
 
-		// 标记当前schema验证是否通过
-		isSchemaValid := true
-		var schemaError *errors.ValidationError
-
-		// 遍历schema中的验证关键字
-		for keyword, keywordValue := range schemaObj {
-			// 跳过非验证关键字
-			if keyword == "title" || keyword == "description" || keyword == "default" || keyword == "examples" {
-				continue
-			}
-
-			validator := registry.GetValidator(keyword)
-			if validator == nil {
-				continue
-			}
-
-			isValid, err := validator(ctx, value, keywordValue, schemaPath)
-			if err != nil {
-				validErr, ok := err.(*errors.ValidationError)
-				if ok {
-					schemaError = validErr
-					isSchemaValid = false
-					break
-				} else {
-					return false, err
-				}
-			}
-
-			if !isValid {
-				isSchemaValid = false
-				schemaError = &errors.ValidationError{
-					Path:    schemaPath,
-					Message: fmt.Sprintf("failed to validate against schema at oneOf[%d] for keyword '%s'", i, keyword),
-					Value:   value,
-					Tag:     keyword,
-				}
-				break
-			}
-		}
-
-		// 如果当前schema验证通过，增加匹配计数
-		if isSchemaValid {
+		// 使用通用的validateWithSchema函数
+		valid, validErr := validateWithSchema(ctx, value, schemaObj, schemaPath, registry)
+		if valid {
 			matchCount++
 			if matchCount > 1 {
 				return false, &errors.ValidationError{
@@ -315,25 +236,18 @@ func validateOneOf(ctx context.Context, value interface{}, schemaValue interface
 					Tag:     "oneOf",
 				}
 			}
-		} else if schemaError != nil {
-			validationErrors = append(validationErrors, *schemaError)
+		} else if validErr != nil {
+			validationErrors = append(validationErrors, *validErr)
 		}
 	}
 
 	// 检查匹配数量
 	if matchCount == 1 {
 		return true, nil
-	} else if matchCount == 0 {
-		return false, &errors.ValidationError{
-			Path:    path,
-			Message: "value does not match any schema in oneOf",
-			Value:   value,
-			Tag:     "oneOf",
-		}
 	} else {
 		return false, &errors.ValidationError{
 			Path:    path,
-			Message: "value matches more than one schema in oneOf",
+			Message: "value does not match any schema in oneOf",
 			Value:   value,
 			Tag:     "oneOf",
 		}
@@ -373,42 +287,18 @@ func validateNot(ctx context.Context, value interface{}, schemaValue interface{}
 		}
 	}
 
-	// 遍历schema中的验证关键字
-	hasValidation := false
-	for keyword, keywordValue := range schema {
-		// 跳过非验证关键字
-		if keyword == "title" || keyword == "description" || keyword == "default" || keyword == "examples" {
-			continue
-		}
+	// 使用通用的validateWithSchema函数，但结果取反
+	valid, _ := validateWithSchema(ctx, value, schema, path, registry)
 
-		validator := registry.GetValidator(keyword)
-		if validator == nil {
-			continue
-		}
-
-		hasValidation = true
-		isValid, err := validator(ctx, value, keywordValue, path)
-		if err != nil || !isValid {
-			// 子验证器失败或返回false，表示value不满足schema，not验证通过
-			return true, nil
-		}
-	}
-
-	// 如果没有任何验证关键字，返回错误
-	if !hasValidation {
+	// not验证：如果schema验证通过，则not验证失败；如果schema验证失败，则not验证通过
+	if valid {
 		return false, &errors.ValidationError{
 			Path:    path,
-			Message: "not schema must contain validation keywords",
-			Value:   schemaValue,
+			Message: "value must not validate against the schema in not",
+			Value:   value,
 			Tag:     "not",
 		}
 	}
 
-	// 如果所有验证都通过，not验证失败
-	return false, &errors.ValidationError{
-		Path:    path,
-		Message: "value must not validate against the schema in not",
-		Value:   value,
-		Tag:     "not",
-	}
+	return true, nil
 }

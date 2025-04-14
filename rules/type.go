@@ -98,6 +98,7 @@ func checkType(value interface{}, typeName string) bool {
 		case float32:
 			return float32(int(v)) == v
 		case json.Number:
+			// 确保是有效的整数
 			f, err := v.Float64()
 			if err != nil {
 				return false

@@ -43,7 +43,7 @@ func validateFormat(ctx context.Context, value interface{}, schemaValue interfac
 	if !ok {
 		return false, &errors.ValidationError{
 			Path:    path,
-			Message: "value must be a string", // 调整为更符合测试预期的消息
+			Message: "value must be a string",
 			Value:   value,
 			Tag:     "format",
 		}

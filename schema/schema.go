@@ -73,8 +73,11 @@ func (s *Schema) Compile() error {
 		switch v := typeVal.(type) {
 		case string:
 			compiled.Keywords["type"] = v
+			// 预处理类型信息
+			compiled.TypeRules["primary"] = []string{v}
 		case []interface{}:
-			var types []string
+			// 预处理类型数组，避免重复类型断言
+			types := make([]string, 0, len(v))
 			for _, t := range v {
 				if ts, ok := t.(string); ok {
 					types = append(types, ts)
@@ -83,6 +86,7 @@ func (s *Schema) Compile() error {
 				}
 			}
 			compiled.Keywords["type"] = types
+			compiled.TypeRules["alternatives"] = types
 		default:
 			return fmt.Errorf("invalid type value: %v", v)
 		}

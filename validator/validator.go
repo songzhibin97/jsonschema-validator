@@ -138,7 +138,12 @@ func (v *Validator) StructCtx(ctx context.Context, s interface{}) error {
 		val = val.Elem()
 	}
 	if val.Kind() != reflect.Struct {
-		return errors.New("input must be a struct")
+		return &errors.ValidationError{
+			Path:    "$",
+			Message: "input must be a struct",
+			Tag:     "struct_validation",
+			Value:   s,
+		}
 	}
 
 	result := &ValidationResult{Valid: true, Errors: []errors.ValidationError{}}
@@ -172,7 +177,12 @@ func (v *Validator) StructCtx(ctx context.Context, s interface{}) error {
 		if v.customValidateFunc != nil {
 			isValid, err := v.customValidateFunc(ctx, fieldValue, path)
 			if err != nil {
-				return fmt.Errorf("custom validation failed for %s: %w", path, err)
+				return &errors.ValidationError{
+					Path:    path,
+					Message: fmt.Sprintf("custom validation failed: %v", err),
+					Tag:     "custom",
+					Value:   fieldValue,
+				}
 			}
 			if !isValid {
 				result.Valid = false
@@ -217,6 +227,13 @@ func (v *Validator) StructCtx(ctx context.Context, s interface{}) error {
 					result.Valid = false
 					if v.opts.StopOnFirstError {
 						return errors.ValidationErrors(result.Errors)
+					}
+				} else {
+					return &errors.ValidationError{
+						Path:    path,
+						Message: fmt.Sprintf("nested struct validation error: %v", err),
+						Tag:     "struct_validation",
+						Value:   fieldValue,
 					}
 				}
 			}
@@ -348,7 +365,13 @@ func (v *Validator) validateCompiledSchema(value interface{}, s *schema.Schema, 
 						result.Valid = false
 						result.Errors = append(result.Errors, *validErr)
 					} else {
-						return nil, fmt.Errorf("validation error: %w", err)
+						result.Valid = false
+						result.Errors = append(result.Errors, errors.ValidationError{
+							Path:    path,
+							Message: fmt.Sprintf("validation error: %v", err),
+							Tag:     keyword,
+							Value:   value,
+						})
 					}
 				} else if !isValid {
 					result.Valid = false
@@ -495,7 +518,13 @@ func (v *Validator) validateCompiledSchema(value interface{}, s *schema.Schema, 
 				result.Valid = false
 				result.Errors = append(result.Errors, *validErr)
 			} else {
-				return nil, fmt.Errorf("validation error: %w", err)
+				result.Valid = false
+				result.Errors = append(result.Errors, errors.ValidationError{
+					Path:    path,
+					Message: fmt.Sprintf("validation error: %v", err),
+					Tag:     keyword,
+					Value:   value,
+				})
 			}
 		} else if !isValid {
 			result.Valid = false
@@ -619,10 +648,18 @@ func (v *Validator) CompileSchema(schemaJSON string) (*schema.Schema, error) {
 
 	s, err := schema.Parse(schemaJSON)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse schema: %w", err)
+		return nil, &errors.ValidationError{
+			Path:    "$",
+			Message: fmt.Sprintf("failed to parse schema: %v", err),
+			Tag:     "schema_parse",
+		}
 	}
 	if err := s.Compile(); err != nil {
-		return nil, fmt.Errorf("failed to compile schema: %w", err)
+		return nil, &errors.ValidationError{
+			Path:    "$",
+			Message: fmt.Sprintf("failed to compile schema: %v", err),
+			Tag:     "schema_compile",
+		}
 	}
 	if v.opts.EnableCaching {
 		v.cache.Store(schemaJSON, s)
@@ -639,7 +676,11 @@ func (v *Validator) ValidateWithSchema(value interface{}, schemaMap map[string]i
 	if typeVal, ok := schemaMap["type"]; ok {
 		validator, exists := v.validators["type"]
 		if !exists {
-			return nil, fmt.Errorf("type validator not found")
+			return nil, &errors.ValidationError{
+				Path:    path,
+				Message: "type validator not found",
+				Tag:     "type",
+			}
 		}
 		isValid, err := validator(ctx, value, typeVal, path)
 		if err != nil {
@@ -647,7 +688,13 @@ func (v *Validator) ValidateWithSchema(value interface{}, schemaMap map[string]i
 				result.Valid = false
 				result.Errors = append(result.Errors, *ve)
 			} else {
-				return nil, err
+				result.Valid = false
+				result.Errors = append(result.Errors, errors.ValidationError{
+					Path:    path,
+					Message: fmt.Sprintf("validation error: %v", err),
+					Tag:     "type",
+					Value:   value,
+				})
 			}
 		} else if !isValid {
 			result.Valid = false
@@ -661,7 +708,12 @@ func (v *Validator) ValidateWithSchema(value interface{}, schemaMap map[string]i
 	if requiredVal, ok := schemaMap["required"]; ok {
 		requiredFields, ok := requiredVal.([]interface{})
 		if !ok {
-			return nil, fmt.Errorf("required must be an array")
+			return nil, &errors.ValidationError{
+				Path:    path,
+				Message: "required must be an array",
+				Tag:     "required",
+				Value:   requiredVal,
+			}
 		}
 		obj, ok := value.(map[string]interface{})
 		if !ok {
@@ -678,7 +730,12 @@ func (v *Validator) ValidateWithSchema(value interface{}, schemaMap map[string]i
 		for _, field := range requiredFields {
 			fieldStr, ok := field.(string)
 			if !ok {
-				return nil, fmt.Errorf("required field must be a string")
+				return nil, &errors.ValidationError{
+					Path:    path,
+					Message: "required field must be a string",
+					Tag:     "required",
+					Value:   field,
+				}
 			}
 			if _, exists := obj[fieldStr]; !exists {
 				result.Valid = false
@@ -711,7 +768,12 @@ func (v *Validator) ValidateWithSchema(value interface{}, schemaMap map[string]i
 		for propName, propSchema := range props {
 			propMap, ok := propSchema.(map[string]interface{})
 			if !ok {
-				return nil, fmt.Errorf("property '%s' schema must be an object", propName)
+				return nil, &errors.ValidationError{
+					Path:    path + "." + propName,
+					Message: fmt.Sprintf("property '%s' schema must be an object", propName),
+					Tag:     "properties",
+					Value:   propSchema,
+				}
 			}
 			propPath := path + "." + propName
 			if propVal, exists := obj[propName]; exists {
@@ -753,7 +815,13 @@ func (v *Validator) ValidateWithSchema(value interface{}, schemaMap map[string]i
 				result.Valid = false
 				result.Errors = append(result.Errors, *ve)
 			} else {
-				return nil, fmt.Errorf("validation error: %w", err)
+				result.Valid = false
+				result.Errors = append(result.Errors, errors.ValidationError{
+					Path:    path,
+					Message: fmt.Sprintf("validation error: %v", err),
+					Tag:     keyword,
+					Value:   value,
+				})
 			}
 		} else if !isValid {
 			result.Valid = false

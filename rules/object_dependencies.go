@@ -44,7 +44,7 @@ func validateDependencies(ctx context.Context, value interface{}, schemaValue in
 	// 遍历所有依赖项
 	for propName, dependency := range dependencies {
 		// 如果对象不包含属性，则跳过该依赖项
-		propValue, exists := obj[propName] // 定义 propValue
+		propValue, exists := obj[propName]
 		if !exists {
 			continue
 		}
@@ -70,7 +70,7 @@ func validateDependencies(ctx context.Context, value interface{}, schemaValue in
 			}
 
 		case map[string]interface{}:
-			// Schema依赖：当属性存在时，属性值必须验证通过指定的schema
+			// Schema依赖：当属性存在时，使用schema验证属性
 			for keyword, keywordValue := range dep {
 				if keyword == "title" || keyword == "description" || keyword == "default" || keyword == "examples" {
 					continue
@@ -80,15 +80,11 @@ func validateDependencies(ctx context.Context, value interface{}, schemaValue in
 					continue
 				}
 				isValid, err := validator(ctx, propValue, keywordValue, path)
-				if !isValid || err != nil { // 合并 !isValid 和 err != nil 的处理
-					// 如果有原始错误，附加其详细信息
-					msg := fmt.Sprintf("dependency validation failed for property '%s' with keyword '%s'", propName, keyword)
-					if err != nil {
-						msg += fmt.Sprintf(": %v", err)
-					}
+				if !isValid || err != nil {
+					// 保持原始错误消息格式
 					return false, &errors.ValidationError{
 						Path:    path,
-						Message: msg,
+						Message: fmt.Sprintf("dependency validation failed for property '%s' with keyword '%s'", propName, keyword),
 						Value:   propValue,
 						Tag:     keyword,
 					}
